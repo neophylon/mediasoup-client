@@ -1,0 +1,30 @@
+{
+  "name": "test",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "DEBUG=mediasoup:* ts-node src/index.ts",
+    "start": "nodemon src/index.ts",
+    "watch": "watchify public/index.js -o public/bundle.js -v"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "express": "^4.21.1",
+    "httpolyglot": "^0.1.2",
+    "mediasoup-client": "^3.7.17",
+    "nodemon": "^3.1.7",
+    "protoo-client": "^4.0.6",
+    "protoo-server": "^4.0.6",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.6.3"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.7.5",
+    "@types/protoo-server": "^4.0.6"
+  }
+}
