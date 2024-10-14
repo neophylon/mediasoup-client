@@ -52,7 +52,7 @@ let routerRtpCapabilities;
 let deviceHandlerName;
 
 const goConnect = (isProducer) => {
-    const url = `wss://192.168.0.51:4443/?roomId=${roomName}&peerId=${peerId}&consumerReplicas=0`;
+    const url = `wss://192.168.1.152:4443/?roomId=${roomName}&peerId=${peerId}&consumerReplicas=0`;
     console.log(url);
     produce = isProducer;
     const options = {
@@ -107,6 +107,20 @@ const joinRoom = async () => {
 
         await mediasoupDevice.load({ routerRtpCapabilities });
         console.log('mediasoup device : ',mediasoupDevice);
+
+        // Join now into the room.
+        // NOTE: Don't send our RTP capabilities if we don't want to consume.
+        const { peers } = await protoo.request('join',{
+            displayName     : peerId,
+            device          : mediasoupDevice,
+            rtpCapabilities : consume
+                ? mediasoupDevice.rtpCapabilities
+                : undefined,
+            sctpCapabilities : useDataChannel && consume
+                ? mediasoupDevice.sctpCapabilities
+                : undefined
+        });
+
 
         if(produce)
         {
@@ -213,18 +227,7 @@ const joinRoom = async () => {
 
         }
 
-        // Join now into the room.
-        // NOTE: Don't send our RTP capabilities if we don't want to consume.
-        const { peers } = await protoo.request('join',{
-            displayName     : peerId,
-            device          : mediasoupDevice,
-            rtpCapabilities : consume
-                ? mediasoupDevice.rtpCapabilities
-                : undefined,
-            sctpCapabilities : useDataChannel && consume
-                ? mediasoupDevice.sctpCapabilities
-                : undefined
-        });
+
     } catch (error) {
         console.error('Device() error :',error);
     }
