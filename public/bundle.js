@@ -17709,6 +17709,17 @@ const protooClient = require('protoo-client');
 const path = window.location.pathname.split('/');
 const roomName = path[2];
 const peerId = path[3];
+const VIDEO_CONSTRAINS =
+{
+	qvga : { width: { ideal: 320 }, height: { ideal: 240 } },
+	vga  : { width: { ideal: 640 }, height: { ideal: 480 } },
+	hd   : { width: { ideal: 1280 }, height: { ideal: 720 } }
+};
+
+const PC_PROPRIETARY_CONSTRAINTS =
+{
+	// optional : [ { googDscp: true } ]
+};
 
 let params = {
     // mediasoup params
@@ -17736,16 +17747,19 @@ let params = {
 }
 let mediasoupDevice = null;
 let sendTransport = null;
-let _forceTcp = false;
+let forceTcp = false;
 let useDataChannel = true;
 let producer = null;
 let produce = true;
+let consume = false;
 let protoo;
 let routerRtpCapabilities;
+let deviceHandlerName;
 
-const goConnect = () => {
-    const url = `wss://localhost:4443/?roomId=${roomName}&peerId=${peerId}&consumerReplicas=0`;
+const goConnect = (isProducer) => {
+    const url = `wss://192.168.0.51:4443/?roomId=${roomName}&peerId=${peerId}&consumerReplicas=0`;
     console.log(url);
+    produce = isProducer;
     const options = {
         retries    : 5,
         factor     : 2,
@@ -17784,16 +17798,23 @@ const joinRoom = async () => {
     //1. get rtpCapabilities;
     
     try {
+        deviceHandlerName = mediasoupClient.detectDevice();
+        if (deviceHandlerName) {
+            console.log("detected handler: %s", deviceHandlerName);
+        } else {
+            console.warn("no suitable handler found for current browser/device");
+        }
         //2. load device
-        mediasoupDevice = new mediasoupClient.Device();
-
+        mediasoupDevice = new mediasoupClient.Device({ handlerName : deviceHandlerName });
+        console.log('>>>> mediasoupDevice: ',mediasoupDevice);
         routerRtpCapabilities = await protoo.request('getRouterRtpCapabilities');
         console.log('rtpCapabilites: ',routerRtpCapabilities);
 
         await mediasoupDevice.load({ routerRtpCapabilities });
         console.log('mediasoup device : ',mediasoupDevice);
 
-        if(produce){
+        if(produce)
+        {
             //4. create transport
             const transportInfo = await protoo.request('createWebRtcTransport',{
                 forceTcp         : false,
@@ -17834,18 +17855,18 @@ const joinRoom = async () => {
             });
 
             sendTransport.on('connect', async ({ dtlsParameters }, callback, errback) => {
-                await protoo.request(
-                    'connectWebRtcTransport',
-                    {
-                        transportId : sendTransport.id,
-                        iceParameters,
-                        dtlsParameters
-                    })
-                    .then(callback)
-                    .catch(errback);
+                console.log('>>>> sendTransport connect')
+                await protoo.request('connectWebRtcTransport',{
+                    transportId : sendTransport.id,
+                    iceParameters,
+                    dtlsParameters
+                })
+                .then(callback)
+                .catch(errback);
             })
 
             sendTransport.on('produce', async ({ kind, rtpParameters, appData }, callback, errback) => {
+                console.log('>>>> sendTransport produce')
                 try
                 {
                     // eslint-disable-next-line no-shadow
@@ -17885,7 +17906,30 @@ const joinRoom = async () => {
                     errback(error);
                 }
             });
+
+            producer = await sendTransport.produce(params);
+            producer.on('transportclose', () => {
+
+            });
+
+            producer.on('trackended', () => {
+
+            });
+
         }
+
+        // Join now into the room.
+        // NOTE: Don't send our RTP capabilities if we don't want to consume.
+        const { peers } = await protoo.request('join',{
+            displayName     : peerId,
+            device          : mediasoupDevice,
+            rtpCapabilities : consume
+                ? mediasoupDevice.rtpCapabilities
+                : undefined,
+            sctpCapabilities : useDataChannel && consume
+                ? mediasoupDevice.sctpCapabilities
+                : undefined
+        });
     } catch (error) {
         console.error('Device() error :',error);
     }
@@ -17928,6 +17972,7 @@ const streamSuccess = (stream) => {
       track,
       ...params
     }
+    console.log('params : ',params);
     goConnect(true)
 }
 const getLocalStream = () => {
