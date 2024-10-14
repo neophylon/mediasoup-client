@@ -17747,19 +17747,18 @@ let params = {
 }
 let mediasoupDevice = null;
 let sendTransport = null;
+let recvTransport = null;
 let forceTcp = false;
 let useDataChannel = true;
 let producer = null;
-let produce = true;
+let produce = false;
 let consume = false;
 let protoo;
 let routerRtpCapabilities;
 let deviceHandlerName;
 
-const goConnect = (isProducer) => {
+const goConnect = () => {
     const url = `wss://192.168.1.152:4443/?roomId=${roomName}&peerId=${peerId}&consumerReplicas=0`;
-    console.log(url);
-    produce = isProducer;
     const options = {
         retries    : 5,
         factor     : 2,
@@ -17825,13 +17824,12 @@ const joinRoom = async () => {
                 ? mediasoupDevice.sctpCapabilities
                 : undefined
         });
-
-
+        console.log('>>>>>>>',peers);
         if(produce)
         {
             //4. create transport
             const transportInfo = await protoo.request('createWebRtcTransport',{
-                forceTcp         : false,
+                forceTcp         : forceTcp,
                 producing        : true,
                 consuming        : false,
                 sctpCapabilities : useDataChannel
@@ -17890,31 +17888,27 @@ const joinRoom = async () => {
                         rtpParameters,
                         appData
                     });
-
+                    console.log('>>>> sendTransport.on("produce") : ',id);
                     callback({ id });
                 } catch (error) {
                     errback(error);
                 }
             });
             sendTransport.on('producedata', async ({sctpStreamParameters,label,protocol,appData},callback,errback) => {
-                console.debug(
+                console.log(
                     '"producedata" event: [sctpStreamParameters:%o, appData:%o]',
                     sctpStreamParameters, appData);
 
                 try
                 {
-                    // eslint-disable-next-line no-shadow
-                    const { id } = await peer.request(
-                        'produceData',
-                        {
-                            transportId : sendTransport.id,
-                            sctpStreamParameters,
-                            
-                            label,
-                            protocol,
-                            appData
-                        });
-
+                    const { id } = await peer.request('produceData',{
+                        transportId : sendTransport.id,
+                        sctpStreamParameters,
+                        label,
+                        protocol,
+                        appData
+                    });
+                    console.log('>>>> sendTransport.on("producedata") : ',id);
                     callback({ id });
                 } catch (error) {
                     errback(error);
@@ -17932,40 +17926,79 @@ const joinRoom = async () => {
 
         }
 
+        // Create mediasoup Transport for receiving (unless we don't want to consume).
+        if (consume)
+        {
+            const transportInfo = await protoo.request('createWebRtcTransport',{
+                forceTcp         : forceTcp,
+                producing        : false,
+                consuming        : true,
+                sctpCapabilities : useDataChannel
+                    ? mediasoupDevice.sctpCapabilities
+                    : undefined
+            });
 
+            const {
+                id,
+                iceParameters,
+                iceCandidates,
+                dtlsParameters,
+                sctpParameters
+            } = transportInfo;
+
+            recvTransport = mediasoupDevice.createRecvTransport({
+                id,
+                iceParameters,
+                iceCandidates,
+                dtlsParameters :
+                {
+                    ...dtlsParameters,
+                    // Remote DTLS role. We know it's always 'auto' by default so, if
+                    // we want, we can force local WebRTC transport to be 'client' by
+                    // indicating 'server' here and vice-versa.
+                    role : 'auto'
+                },
+                sctpParameters,
+                iceServers 	       : [],
+                additionalSettings :
+                    { encodedInsertableStreams: false }
+            });
+
+            recvTransport.on('connect', ({ iceParameters, dtlsParameters }, callback, errback) => {
+                protoo.request('connectWebRtcTransport',{
+                    transportId : recvTransport.id,
+                    iceParameters,
+                    dtlsParameters
+                })
+                .then(callback)
+                .catch(errback);
+            });
+
+            consumer = await recvTransport.consume({
+                id,
+                producerId,
+                kind,
+                rtpParameters,
+                // NOTE: Force streamId to be same in mic and webcam and different
+                // in screen sharing so libwebrtc will just try to sync mic and
+                // webcam streams from the same remote peer.
+                streamId : `${peerId}-${appData.share ? 'share' : 'mic-webcam'}`,
+                appData  : { ...appData, peerId } // Trick.
+            });
+
+            // Store in the map.
+            consumers.set(consumer.id, consumer);
+
+            consumer.on('transportclose', () =>
+            {
+                consumers.delete(consumer.id);
+            });
+
+        }
     } catch (error) {
         console.error('Device() error :',error);
     }
     
-    
-    //3.join
-    // const peerInfo = await protoo.request('join',{
-    //     displayName:"neo",
-    //     device: mediasoupDevice,
-    //     rtpCapabilities: rtpCapabilities,
-    //     sctpCapabilities: undefined
-    // }); 
-    // console.log('peerInfo :',peerInfo);
-
-
-
-    //produce
-    // console.log('>>>> params',params);
-    // producer = await peer.request('produce',{
-    //     transportId : transport.id,
-    //     kind: params.track.kind,
-    //     rtpParameters: rtpCapabilities,
-    //     ...params
-    // });
-    // producer.on('trackended', () => {
-    //     console.log('track ended')
-    //     // close video track
-    // })
-    
-    // producer.on('transportclose', () => {
-    //     console.log('transport ended')
-    //     // close video track
-    // })
 }
 
 const streamSuccess = (stream) => {
@@ -17976,9 +18009,9 @@ const streamSuccess = (stream) => {
       ...params
     }
     console.log('params : ',params);
-    goConnect(true)
+    goConnect()
 }
-const getLocalStream = () => {
+const getLocalStream = (isProduce) => {
     produce = true;
     navigator.mediaDevices.getUserMedia({
       audio: false,
@@ -17998,10 +18031,15 @@ const getLocalStream = () => {
       console.log(error.message)
     })
 }
+const goConsume = () => {
+    consume = true;
+    console.log('click consume');
+    goConnect()
+}
 
 btn_webcam.disabled = false;
 btn_webcam.addEventListener('click', getLocalStream)
-// btn_subscribe.addEventListener('click', goConsume)
+btn_subscribe.addEventListener('click', goConsume)
 },{"mediasoup-client":43,"protoo-client":56}],76:[function(require,module,exports){
 arguments[4][51][0].apply(exports,arguments)
 },{"dup":51}],77:[function(require,module,exports){
