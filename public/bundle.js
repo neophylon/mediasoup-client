@@ -17996,8 +17996,7 @@ const joinRoom = async () => {
                 // in screen sharing so libwebrtc will just try to sync mic and
                 // webcam streams from the same remote peer.
                 streamId : `${peerId}-${appData.share ? 'share' : 'mic-webcam'}`,
-                appData  : { ...appData, peerId }, // Trick.
-                paused: true
+                appData  : { ...appData, peerId } // Trick.
             });
 
             // Store in the map.
