@@ -44,16 +44,19 @@ let mediasoupDevice = null;
 let sendTransport = null;
 let recvTransport = null;
 let forceTcp = false;
-let useDataChannel = true;
+let useDataChannel = false;
 let producer = null;
-let produce = false;
-let consume = false;
+let consumer = null;
+let produce = true;
+let consume = true;
 let protoo;
 let routerRtpCapabilities;
 let deviceHandlerName;
 
-const goConnect = () => {
-    const url = `wss://192.168.1.152:4443/?roomId=${roomName}&peerId=${peerId}&consumerReplicas=0`;
+const goConnect = ({sender}) => {
+    produce = sender ? true : false;
+    consume = sender ? false : true;
+    const url = `wss://192.168.0.51:4443/?roomId=${roomName}&peerId=${peerId}&consumerReplicas=0`;
     const options = {
         retries    : 5,
         factor     : 2,
@@ -88,9 +91,6 @@ const goConnect = () => {
 }
 
 const joinRoom = async () => {
-    console.log('join room!!');
-    //1. get rtpCapabilities;
-    
     try {
         deviceHandlerName = mediasoupClient.detectDevice();
         if (deviceHandlerName) {
@@ -98,7 +98,7 @@ const joinRoom = async () => {
         } else {
             console.warn("no suitable handler found for current browser/device");
         }
-        //2. load device
+
         mediasoupDevice = new mediasoupClient.Device({ handlerName : deviceHandlerName });
         console.log('>>>> mediasoupDevice: ',mediasoupDevice);
         routerRtpCapabilities = await protoo.request('getRouterRtpCapabilities');
@@ -107,19 +107,6 @@ const joinRoom = async () => {
         await mediasoupDevice.load({ routerRtpCapabilities });
         console.log('mediasoup device : ',mediasoupDevice);
 
-        // Join now into the room.
-        // NOTE: Don't send our RTP capabilities if we don't want to consume.
-        const { peers } = await protoo.request('join',{
-            displayName     : peerId,
-            device          : mediasoupDevice,
-            rtpCapabilities : consume
-                ? mediasoupDevice.rtpCapabilities
-                : undefined,
-            sctpCapabilities : useDataChannel && consume
-                ? mediasoupDevice.sctpCapabilities
-                : undefined
-        });
-        console.log('>>>>>>>',peers);
         if(produce)
         {
             //4. create transport
@@ -189,6 +176,7 @@ const joinRoom = async () => {
                     errback(error);
                 }
             });
+            //send produce by datachannel to router
             sendTransport.on('producedata', async ({sctpStreamParameters,label,protocol,appData},callback,errback) => {
                 console.log(
                     '"producedata" event: [sctpStreamParameters:%o, appData:%o]',
@@ -208,6 +196,19 @@ const joinRoom = async () => {
                 } catch (error) {
                     errback(error);
                 }
+            });
+
+            // Join now into the room.
+            // NOTE: Don't send our RTP capabilities if we don't want to consume.
+            const { peers } = await protoo.request('join',{
+                displayName     : peerId,
+                device          : mediasoupDevice,
+                rtpCapabilities : true
+                    ? mediasoupDevice.rtpCapabilities
+                    : undefined,
+                sctpCapabilities : useDataChannel && true
+                    ? mediasoupDevice.sctpCapabilities
+                    : undefined
             });
 
             producer = await sendTransport.produce(params);
@@ -268,6 +269,18 @@ const joinRoom = async () => {
                 .then(callback)
                 .catch(errback);
             });
+            // Join now into the room.
+            // NOTE: Don't send our RTP capabilities if we don't want to consume.
+            const { peers } = await protoo.request('join',{
+                displayName     : peerId,
+                device          : mediasoupDevice,
+                rtpCapabilities : true
+                    ? mediasoupDevice.rtpCapabilities
+                    : undefined,
+                sctpCapabilities : useDataChannel && true
+                    ? mediasoupDevice.sctpCapabilities
+                    : undefined
+            });
 
             consumer = await recvTransport.consume({
                 id,
@@ -290,6 +303,7 @@ const joinRoom = async () => {
             });
 
         }
+
     } catch (error) {
         console.error('Device() error :',error);
     }
@@ -304,21 +318,13 @@ const streamSuccess = (stream) => {
       ...params
     }
     console.log('params : ',params);
-    goConnect()
+    goConnect({sender:true})
 }
-const getLocalStream = (isProduce) => {
-    produce = true;
+const getLocalStream = () => {
     navigator.mediaDevices.getUserMedia({
-      audio: false,
+      audio: true,
       video: {
-        width: {
-          min: 640,
-          max: 1920,
-        },
-        height: {
-          min: 400,
-          max: 1080,
-        }
+        ...VIDEO_CONSTRAINS['hd']
       }
     })
     .then(streamSuccess)
@@ -329,7 +335,7 @@ const getLocalStream = (isProduce) => {
 const goConsume = () => {
     consume = true;
     console.log('click consume');
-    goConnect()
+    goConnect({sender:false})
 }
 
 btn_webcam.disabled = false;
