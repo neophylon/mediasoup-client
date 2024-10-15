@@ -56,7 +56,7 @@ let deviceHandlerName;
 const goConnect = ({sender}) => {
     produce = sender ? true : false;
     consume = sender ? false : true;
-    const url = `wss://192.168.0.51:4443/?roomId=${roomName}&peerId=${peerId}&consumerReplicas=0`;
+    const url = `wss://192.168.1.152:4443/?roomId=${roomName}&peerId=${peerId}&consumerReplicas=0`;
     const options = {
         retries    : 5,
         factor     : 2,
@@ -113,7 +113,7 @@ const joinRoom = async () => {
             const transportInfo = await protoo.request('createWebRtcTransport',{
                 forceTcp         : forceTcp,
                 producing        : true,
-                consuming        : false,
+                consuming        : true,
                 sctpCapabilities : useDataChannel
                     ? mediasoupDevice.sctpCapabilities
                     : undefined
@@ -291,7 +291,8 @@ const joinRoom = async () => {
                 // in screen sharing so libwebrtc will just try to sync mic and
                 // webcam streams from the same remote peer.
                 streamId : `${peerId}-${appData.share ? 'share' : 'mic-webcam'}`,
-                appData  : { ...appData, peerId } // Trick.
+                appData  : { ...appData, peerId }, // Trick.
+                paused: true
             });
 
             // Store in the map.
